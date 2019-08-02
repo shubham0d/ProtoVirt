@@ -1,2 +1,2 @@
 # Hypervisior-from-scratch
-A attempt to create own hypervisior from scratch in linux
+An attempt to create own hypervisior from scratch in linux
