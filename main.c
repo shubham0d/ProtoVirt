@@ -82,6 +82,7 @@ static inline uint32_t vmcs_revision_id(void)
 bool getVmxOperation(void) {
     //unsigned long cr0;
 	unsigned long cr4;
+	unsigned long cr0;
     uint64_t feature_control;
 	uint64_t required;
     // setting CR4.VMXE[bit 13] = 1
@@ -112,13 +113,13 @@ bool getVmxOperation(void) {
 	 * - Bit X is 0 in _FIXED1: bit X is fixed to 0 in CRx.
 	 */
 	__asm__ __volatile__("mov %%cr0, %0" : "=r"(cr0) : : "memory");
-	cr0 &= rdmsr(MSR_IA32_VMX_CR0_FIXED1);
-	cr0 |= rdmsr(MSR_IA32_VMX_CR0_FIXED0);
+	cr0 &= __rdmsr1(MSR_IA32_VMX_CR0_FIXED1);
+	cr0 |= __rdmsr1(MSR_IA32_VMX_CR0_FIXED0);
 	__asm__ __volatile__("mov %0, %%cr0" : : "r"(cr0) : "memory");
 
 	__asm__ __volatile__("mov %%cr4, %0" : "=r"(cr4) : : "memory");
-	cr4 &= rdmsr(MSR_IA32_VMX_CR4_FIXED1);
-	cr4 |= rdmsr(MSR_IA32_VMX_CR4_FIXED0);
+	cr4 &= __rdmsr1(MSR_IA32_VMX_CR4_FIXED1);
+	cr4 |= __rdmsr1(MSR_IA32_VMX_CR4_FIXED0);
 
 	// allocating 4kib((4096 bytes) of memory for vmxon region
 	//vmcs_revision_id();
