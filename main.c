@@ -40,7 +40,8 @@
 #define EAX_EDX_RET(val, low, high)	"=a" (low), "=d" (high)
 
 
-
+// CH 30.3, Vol 3
+// VMXON instruction - Enter VMX operation
 static inline int _vmxon(uint64_t phys)
 {
 	uint8_t ret;
@@ -82,6 +83,7 @@ bool getVmxOperation(void) {
 	uint64_t required;
 	long int vmxon_phy_region = 0;
 	uint64_t *vmxon_region;
+	u32 low1 = 0;
     // setting CR4.VMXE[bit 13] = 1
     __asm__ __volatile__("mov %%cr4, %0" : "=r"(cr4) : : "memory");
     cr4 |= X86_CR4_VMXE;
@@ -93,8 +95,6 @@ bool getVmxOperation(void) {
 	 *  Bit 2: Enables VMXON outside of SMX operation. If clear, VMXON
 	 *    outside of SMX causes a #GP.
 	 */
-
-	 u32 low1 = 0;
 	required = FEATURE_CONTROL_VMXON_ENABLED_OUTSIDE_SMX;
 	required |= FEATURE_CONTROL_LOCKED;
 	feature_control = __rdmsr1(MSR_IA32_FEATURE_CONTROL);
@@ -127,7 +127,6 @@ bool getVmxOperation(void) {
    	}
 	vmxon_phy_region = __pa(vmxon_region);
 	*(uint32_t *)vmxon_region = vmcs_revision_id();
-	printk(KERN_INFO "Successfull copied vmcs revision id to vmxon region\n");
 	if (_vmxon(vmxon_phy_region))
 		return false;
 	return true;
@@ -155,19 +154,21 @@ bool vmxSupport(void)
 
 int __init start_init(void)
 {
-
-    if (vmxSupport()){
-        if (getVmxOperation()) {
-			printk(KERN_INFO "VMX operation successfull! Hurray");
-			asm volatile ("vmxoff\n" : : : "cc");
-		}
-		else {
-			printk(KERN_INFO "VMX opperation failed!!\n");
-		}
-    }
-    else {
-        printk(KERN_INFO "VMX support not present\n");
-    }
+    if (!vmxSupport()){
+		printk(KERN_INFO "VMX support not present! EXITING");
+		return 0;
+	}
+	else {
+		printk(KERN_INFO "VMX support present! CONTINUING");
+	}
+	if (!getVmxOperation()) {
+		printk(KERN_INFO "VMX Operation failed! EXITING");
+		return 0;
+	}
+	else {
+		printk(KERN_INFO "VMX Operation succeeded! CONTINUING");
+	}
+	asm volatile ("vmxoff\n" : : : "cc");
     return 0;
 }
 
