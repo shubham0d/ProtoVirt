@@ -18,12 +18,14 @@
 #include <linux/uaccess.h>
 #include <linux/kvm.h>
 #include <linux/gfp.h>
+#include <linux/slab.h>
 #include <asm/asm.h>
 #include <asm/errno.h>
 #include <asm/kvm.h>
 #include <asm/cpumask.h>
 #include <asm/processor.h>
 
+#define MYPAGE_SIZE 4096
 #define X86_CR4_VMXE_BIT	13 /* enable VMX virtualization */
 #define X86_CR4_VMXE		_BITUL(X86_CR4_VMXE_BIT)
 #define FEATURE_CONTROL_VMXON_ENABLED_OUTSIDE_SMX	(1<<2)
@@ -38,16 +40,8 @@
 #define EAX_EDX_RET(val, low, high)	"=a" (low), "=d" (high)
 
 
-// CH 24.2, Vol 3
-// getting vmcs revision identifier
-/*
-static inline uint32_t vmcs_revision_id(void)
-{
-	return rdmsr(MSR_IA32_VMX_BASIC);
-}
-*/
 
-static inline int vmxon(uint64_t phys)
+static inline int _vmxon(uint64_t phys)
 {
 	uint8_t ret;
 
@@ -55,7 +49,6 @@ static inline int vmxon(uint64_t phys)
 		: [ret]"=rm"(ret)
 		: [pa]"m"(phys)
 		: "cc", "memory");
-
 	return ret;
 }
 
@@ -71,6 +64,8 @@ static inline unsigned long long notrace __rdmsr1(unsigned int msr)
 	return EAX_EDX_VAL(val, low, high);
 }
 
+// CH 24.2, Vol 3
+// getting vmcs revision identifier
 static inline uint32_t vmcs_revision_id(void)
 {
 	return __rdmsr1(MSR_IA32_VMX_BASIC);
@@ -85,6 +80,8 @@ bool getVmxOperation(void) {
 	unsigned long cr0;
     uint64_t feature_control;
 	uint64_t required;
+	long int vmxon_phy_region = 0;
+	uint64_t *vmxon_region;
     // setting CR4.VMXE[bit 13] = 1
     __asm__ __volatile__("mov %%cr4, %0" : "=r"(cr4) : : "memory");
     cr4 |= X86_CR4_VMXE;
@@ -120,23 +117,19 @@ bool getVmxOperation(void) {
 	__asm__ __volatile__("mov %%cr4, %0" : "=r"(cr4) : : "memory");
 	cr4 &= __rdmsr1(MSR_IA32_VMX_CR4_FIXED1);
 	cr4 |= __rdmsr1(MSR_IA32_VMX_CR4_FIXED0);
+	__asm__ __volatile__("mov %0, %%cr4" : : "r"(cr4) : "memory");
 
 	// allocating 4kib((4096 bytes) of memory for vmxon region
-	//vmcs_revision_id();
-	printk(KERN_INFO "VMX revision id is %d",vmcs_revision_id() );
-	/*
-	struct vmx_pages *vmx = addr_gva2hva(vm, vmx_gva);
-	struct kvm_vm *vm;
-	vmx->vmxon = (void *)vm_vaddr_alloc(vm, getpagesize(), 0x10000, 0, 0);
-	vmx->vmxon_hva = addr_gva2hva(vm, (uintptr_t)vmx->vmxon);
-	vmx->vmxon_gpa = addr_gva2gpa(vm, (uintptr_t)vmx->vmxon);
-	// putting vmcs revision data in allocated memory
-	*(uint32_t *)(vmx->vmxon) = vmcs_revision();
-
-
-	if (vmxon(vmx->vmxon_gpa))
+	vmxon_region = kzalloc(MYPAGE_SIZE,GFP_KERNEL);
+   	if(vmxon_region==NULL){
+		printk(KERN_INFO "Error allocating vmxon region\n");
+      	return false;
+   	}
+	vmxon_phy_region = __pa(vmxon_region);
+	*(uint32_t *)vmxon_region = vmcs_revision_id();
+	printk(KERN_INFO "Successfull copied vmcs revision id to vmxon region\n");
+	if (_vmxon(vmxon_phy_region))
 		return false;
-		*/
 	return true;
 }
 
@@ -162,11 +155,11 @@ bool vmxSupport(void)
 
 int __init start_init(void)
 {
-    int vmxSupportPresent;
 
     if (vmxSupport()){
         if (getVmxOperation()) {
-			printk(KERN_INFO "VMX operation successfull");
+			printk(KERN_INFO "VMX operation successfull! Hurray");
+			asm volatile ("vmxoff\n" : : : "cc");
 		}
 		else {
 			printk(KERN_INFO "VMX opperation failed!!\n");
