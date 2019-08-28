@@ -72,7 +72,22 @@ static inline uint32_t vmcs_revision_id(void)
 	return __rdmsr1(MSR_IA32_VMX_BASIC);
 }
 
+uint64_t *allocVmcsRegion() {
+	uint64_t *vmcsRegion;
+	vmcsRegion = kzalloc(MYPAGE_SIZE,GFP_KERNEL);
+   	if(vmcsRegion==NULL){
+		printk(KERN_INFO "Error allocating vmcs region\n");
+      	return false;
+   	}
+	return vmcsRegion;
+}
 
+bool vmcsOperations() {
+	long int vmxonPhyRegion = 0;
+	uint64_t *vmcsRegion = NULL;
+	vmcsRegion = allocVmcsRegion();
+	vmxonPhyRegion = __pa(vmcsRegion);
+}
 // CH 23.7, Vol 3
 // Enter in VMX mode
 bool getVmxOperation(void) {
@@ -168,6 +183,13 @@ int __init start_init(void)
 	else {
 		printk(KERN_INFO "VMX Operation succeeded! CONTINUING");
 	}
+	if (!vmcsOperations()) {
+		printk(KERN_INFO "VMCS Operation failed! EXITING");
+		return 0;
+	}
+	else {
+		printk(KERN_INFO "VMX Operation succeeded! CONTINUING");
+	}
 	asm volatile ("vmxoff\n" : : : "cc");
     return 0;
 }
@@ -176,12 +198,6 @@ static void __exit end_exit(void)
 {
     printk(KERN_INFO "Bye Bye\n");
 }
-
-
-
-
-
-
 
 module_init(start_init);
 module_exit(end_exit);
