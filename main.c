@@ -71,7 +71,8 @@ static inline uint32_t vmcs_revision_id(void)
 {
 	return __rdmsr1(MSR_IA32_VMX_BASIC);
 }
-
+// CH 23.7, Vol 3
+// Enter in VMX mode
 uint64_t *allocVmcsRegion() {
 	uint64_t *vmcsRegion;
 	vmcsRegion = kzalloc(MYPAGE_SIZE,GFP_KERNEL);
@@ -81,12 +82,15 @@ uint64_t *allocVmcsRegion() {
    	}
 	return vmcsRegion;
 }
-
+// CH 24.2, Vol 3
+// VMCS region
 bool vmcsOperations() {
 	long int vmxonPhyRegion = 0;
 	uint64_t *vmcsRegion = NULL;
 	vmcsRegion = allocVmcsRegion();
 	vmxonPhyRegion = __pa(vmcsRegion);
+	*(uint32_t *)vmcsRegion = vmcs_revision_id();
+	return True;
 }
 // CH 23.7, Vol 3
 // Enter in VMX mode
