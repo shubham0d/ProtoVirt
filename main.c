@@ -40,6 +40,8 @@
 #define EAX_EDX_RET(val, low, high)	"=a" (low), "=d" (high)
 
 
+uint64_t *vmxonRegion = NULL;
+uint64_t *vmcsRegion = NULL;
 // CH 30.3, Vol 3
 // VMXON instruction - Enter VMX operation
 static inline int _vmxon(uint64_t phys)
@@ -49,6 +51,36 @@ static inline int _vmxon(uint64_t phys)
 	__asm__ __volatile__ ("vmxon %[pa]; setna %[ret]"
 		: [ret]"=rm"(ret)
 		: [pa]"m"(phys)
+		: "cc", "memory");
+	return ret;
+}
+
+/* Dealloc vmxon region*/
+bool deallocate_vmxon_region(void) {
+	if(vmxonRegion){
+	    kfree(vmxonRegion);
+		return true;
+   	}
+   	return false;
+}
+
+/* Dealloc vmcs guest region*/
+bool deallocate_vmcs_region(void) {
+	if(vmcsRegion){
+    	printk(KERN_INFO "Freeing allocated vmcs region!\n");
+    	kfree(vmcsRegion);
+		return true;
+	}
+	return false;
+}
+
+static inline int _vmptrld(uint64_t vmcs_pa)
+{
+	uint8_t ret;
+
+	__asm__ __volatile__ ("vmptrld %[pa]; setna %[ret]"
+		: [ret]"=rm"(ret)
+		: [pa]"m"(vmcs_pa)
 		: "cc", "memory");
 	return ret;
 }
@@ -73,24 +105,30 @@ static inline uint32_t vmcs_revision_id(void)
 }
 // CH 23.7, Vol 3
 // Enter in VMX mode
-uint64_t *allocVmcsRegion() {
-	uint64_t *vmcsRegion;
+bool allocVmcsRegion(void) {
 	vmcsRegion = kzalloc(MYPAGE_SIZE,GFP_KERNEL);
    	if(vmcsRegion==NULL){
 		printk(KERN_INFO "Error allocating vmcs region\n");
       	return false;
    	}
-	return vmcsRegion;
+	return true;
 }
 // CH 24.2, Vol 3
 // VMCS region
-bool vmcsOperations() {
-	long int vmxonPhyRegion = 0;
-	uint64_t *vmcsRegion = NULL;
-	vmcsRegion = allocVmcsRegion();
-	vmxonPhyRegion = __pa(vmcsRegion);
-	*(uint32_t *)vmcsRegion = vmcs_revision_id();
-	return True;
+bool vmcsOperations(void) {
+	long int vmcsPhyRegion = 0;
+	if (allocVmcsRegion()){
+		vmcsPhyRegion = __pa(vmcsRegion);
+		*(uint32_t *)vmcsRegion = vmcs_revision_id();
+	}
+	else {
+		return false;
+	}
+
+	//making the vmcs active and current
+	if (_vmptrld(vmcsPhyRegion))
+		return false;
+	return true;
 }
 // CH 23.7, Vol 3
 // Enter in VMX mode
@@ -101,7 +139,6 @@ bool getVmxOperation(void) {
     uint64_t feature_control;
 	uint64_t required;
 	long int vmxon_phy_region = 0;
-	uint64_t *vmxon_region;
 	u32 low1 = 0;
     // setting CR4.VMXE[bit 13] = 1
     __asm__ __volatile__("mov %%cr4, %0" : "=r"(cr4) : : "memory");
@@ -139,18 +176,36 @@ bool getVmxOperation(void) {
 	__asm__ __volatile__("mov %0, %%cr4" : : "r"(cr4) : "memory");
 
 	// allocating 4kib((4096 bytes) of memory for vmxon region
-	vmxon_region = kzalloc(MYPAGE_SIZE,GFP_KERNEL);
-   	if(vmxon_region==NULL){
+	vmxonRegion = kzalloc(MYPAGE_SIZE,GFP_KERNEL);
+   	if(vmxonRegion==NULL){
 		printk(KERN_INFO "Error allocating vmxon region\n");
       	return false;
    	}
-	vmxon_phy_region = __pa(vmxon_region);
-	*(uint32_t *)vmxon_region = vmcs_revision_id();
+	vmxon_phy_region = __pa(vmxonRegion);
+	*(uint32_t *)vmxonRegion = vmcs_revision_id();
 	if (_vmxon(vmxon_phy_region))
 		return false;
 	return true;
 }
 
+
+bool vmxoffOperation(void)
+{
+	if (deallocate_vmxon_region()) {
+		printk(KERN_INFO "Successfully freed allocated vmxon region!\n");
+	}
+	else {
+		printk(KERN_INFO "Error freeing allocated vmxon region!\n");
+	}
+	if (deallocate_vmcs_region()) {
+		printk(KERN_INFO "Successfully freed allocated vmcs region!\n");
+	}
+	else {
+		printk(KERN_INFO "Error freeing allocated vmcs region!\n");
+	}
+	asm volatile ("vmxoff\n" : : : "cc");
+	return true;
+}
 // CH 23.6, Vol 3
 // Checking the support of VMX
 bool vmxSupport(void)
@@ -194,7 +249,13 @@ int __init start_init(void)
 	else {
 		printk(KERN_INFO "VMX Operation succeeded! CONTINUING");
 	}
-	asm volatile ("vmxoff\n" : : : "cc");
+	if (!vmxoffOperation()) {
+		printk(KERN_INFO "VMXOFF operation failed! EXITING");
+		return 0;
+	}
+	else {
+		printk(KERN_INFO "VMXOFF Operation succeeded! CONTINUING");
+	}
     return 0;
 }
 
