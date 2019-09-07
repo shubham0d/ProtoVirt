@@ -32,7 +32,22 @@
 #define FEATURE_CONTROL_LOCKED				(1<<0)
 #define MSR_IA32_FEATURE_CONTROL        0x0000003a
 #define MSR_IA32_VMX_BASIC              0x00000480
+
+// for vmcs control field
 #define MSR_IA32_VMX_PINBASED_CTLS		0x00000481
+#define MSR_IA32_VMX_PROCBASED_CTLS		0x00000482
+#define MSR_IA32_VMX_PROCBASED_CTLS2	0x0000048b
+#define MSR_IA32_VMX_EXIT_CTLS			0x00000483
+#define MSR_IA32_VMX_ENTRY_CTLS			0x00000484
+// CH B.3.1
+// Table B-8. Encodings for 32-Bit Control Fields
+#define PIN_BASED_VM_EXEC_CONTROLS		0x00004000
+#define PROC_BASED_VM_EXEC_CONTROLS		0x00004002
+#define PROC2_BASED_VM_EXEC_CONTROLS	0x0000401e
+#define VM_EXIT_CONTROLS				0x0000400c
+#define VM_ENTRY_CONTROLS				0x00004012
+
+
 #define MSR_IA32_VMX_CR0_FIXED0         0x00000486
 #define MSR_IA32_VMX_CR0_FIXED1         0x00000487
 #define MSR_IA32_VMX_CR4_FIXED0         0x00000488
@@ -89,6 +104,16 @@ static inline uint64_t vmreadz(uint64_t encoding)
 	return value;
 }
 
+static inline int vmwrite(uint64_t encoding, uint64_t value)
+{
+	uint8_t ret;
+	__asm__ __volatile__ ("vmwrite %[value], %[encoding]; setna %[ret]"
+		: [ret]"=rm"(ret)
+		: [value]"rm"(value), [encoding]"r"(encoding)
+		: "cc", "memory");
+
+	return ret;
+}
 
 uint32_t vmExit_reason(void) {
 	uint32_t exit_reason = vmreadz(VM_EXIT_REASON);
@@ -241,9 +266,34 @@ unsigned long long default1_controls(void){
 // CH 26.2.1, Vol 3
 // Initializing VMCS control field
 bool initVmcsControlField(void) {
-	// check whether any of the default1 controls may be 0:
+	// checking of any of the default1 controls may be 0:
+	//not doing it for now.
+	// CH A.3.1, Vol 3
+	// setting pin based controls
+	uint32_t pinbased_control0 = __rdmsr1(MSR_IA32_VMX_PINBASED_CTLS);
+	uint32_t pinbased_control1 = __rdmsr1(MSR_IA32_VMX_PINBASED_CTLS) >> 32;
+	uint32_t procbased_control0 = __rdmsr1(MSR_IA32_VMX_PROCBASED_CTLS);
+	uint32_t procbased_control1 = __rdmsr1(MSR_IA32_VMX_PROCBASED_CTLS) >> 32;
+	uint32_t procbased_secondary_control0 = __rdmsr1(MSR_IA32_VMX_PROCBASED_CTLS2);
+	uint32_t procbased_secondary_control1 = __rdmsr1(MSR_IA32_VMX_PROCBASED_CTLS2) >> 32;
+	uint32_t vm_exit_control0 = __rdmsr1(MSR_IA32_VMX_EXIT_CTLS);
+	uint32_t vm_exit_control1 = __rdmsr1(MSR_IA32_VMX_EXIT_CTLS) >> 32;
+	uint32_t vm_entry_control0 = __rdmsr1(MSR_IA32_VMX_ENTRY_CTLS);
+	uint32_t vm_entry_control1 = __rdmsr1(MSR_IA32_VMX_ENTRY_CTLS) >> 32;
+	// setting final value to write to control fields
+	uint32_t pinbased_control_final = (pinbased_control0 & pinbased_control1);
+	uint32_t procbased_control_final = (procbased_control0 & procbased_control1);
+	uint32_t procbased_secondary_control_final = (procbased_secondary_control0 & procbased_secondary_control0);
+	uint32_t vm_exit_control_final = (vm_exit_control0 & vm_exit_control1);
+	uint32_t vm_entry_control_final = (vm_entry_control0 & vm_entry_control1);
+	// writing the value to control field
+	vmwrite(PIN_BASED_VM_EXEC_CONTROLS, pinbased_control_final);
+	vmwrite(PROC_BASED_VM_EXEC_CONTROLS, procbased_control_final);
+	vmwrite(PROC2_BASED_VM_EXEC_CONTROLS, procbased_secondary_control_final);
+	vmwrite(VM_EXIT_CONTROLS, vm_exit_control_final);
+	vmwrite(VM_ENTRY_CONTROLS, vm_entry_control_final);
 
-	//__rdmsr1(MSR_IA32_VMX_TRUE_PINBASED_CTLS);
+
 	return true;
 }
 
