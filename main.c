@@ -32,10 +32,15 @@
 #define FEATURE_CONTROL_LOCKED				(1<<0)
 #define MSR_IA32_FEATURE_CONTROL        0x0000003a
 #define MSR_IA32_VMX_BASIC              0x00000480
+#define MSR_IA32_VMX_PINBASED_CTLS		0x00000481
 #define MSR_IA32_VMX_CR0_FIXED0         0x00000486
 #define MSR_IA32_VMX_CR0_FIXED1         0x00000487
 #define MSR_IA32_VMX_CR4_FIXED0         0x00000488
 #define MSR_IA32_VMX_CR4_FIXED1         0x00000489
+
+
+#define VM_EXIT_REASON			 		0x00004402
+#define VM_INSTRUCTION_ERROR			0x00004000  // CH 26.1, Vol 3
 #define EAX_EDX_VAL(val, low, high)	((low) | (high) << 32)
 #define EAX_EDX_RET(val, low, high)	"=a" (low), "=d" (high)
 
@@ -53,6 +58,41 @@ static inline int _vmxon(uint64_t phys)
 		: [pa]"m"(phys)
 		: "cc", "memory");
 	return ret;
+}
+
+// CH 24.11.2, Vol 3
+static inline int vmread(uint64_t encoding, uint64_t *value)
+{
+	uint64_t tmp;
+	uint8_t ret;
+	/*
+	if (enable_evmcs)
+		return evmcs_vmread(encoding, value);
+	*/
+	__asm__ __volatile__("vmread %[encoding], %[value]; setna %[ret]"
+		: [value]"=rm"(tmp), [ret]"=rm"(ret)
+		: [encoding]"r"(encoding)
+		: "cc", "memory");
+
+	*value = tmp;
+	return ret;
+}
+
+/*
+ * A wrapper around vmread that ignores errors and returns zero if the
+ * vmread instruction fails.
+ */
+static inline uint64_t vmreadz(uint64_t encoding)
+{
+	uint64_t value = 0;
+	vmread(encoding, &value);
+	return value;
+}
+
+
+uint32_t vmExit_reason(void) {
+	uint32_t exit_reason = vmreadz(VM_EXIT_REASON);
+	return exit_reason;
 }
 
 /* Dealloc vmxon region*/
@@ -187,7 +227,25 @@ bool getVmxOperation(void) {
 		return false;
 	return true;
 }
+// Ch A.2, Vol 3
+// indicate whether any of the default1 controls may be 0
+// if return 0, all the default1 controls are reserved and must be 1.
+// if return 1,not all the default1 controls are reserved, and
+// some (but not necessarily all) may be 0.
+unsigned long long default1_controls(void){
+	unsigned long long check_default1_controls = (unsigned long long)((__rdmsr1(MSR_IA32_VMX_BASIC) << 55) & 1);
+	//printk(KERN_INFO "default1 controls value!---%llu\n", check_default1_controls);
+	return check_default1_controls;
+}
 
+// CH 26.2.1, Vol 3
+// Initializing VMCS control field
+bool initVmcsControlField(void) {
+	// check whether any of the default1 controls may be 0:
+
+	//__rdmsr1(MSR_IA32_VMX_TRUE_PINBASED_CTLS);
+	return true;
+}
 
 bool vmxoffOperation(void)
 {
@@ -248,6 +306,13 @@ int __init start_init(void)
 	}
 	else {
 		printk(KERN_INFO "VMX Operation succeeded! CONTINUING");
+	}
+	if (!initVmcsControlField()) {
+		printk(KERN_INFO "Initialization of VMCS Control field failed! EXITING");
+		return 0;
+	}
+	else {
+		printk(KERN_INFO "Initializing of control fields to the most basic settings succeeded! CONTINUING");
 	}
 	if (!vmxoffOperation()) {
 		printk(KERN_INFO "VMXOFF operation failed! EXITING");
