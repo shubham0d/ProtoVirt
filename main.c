@@ -1,4 +1,3 @@
-#include <asm/processor.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/const.h>
@@ -47,6 +46,25 @@
 #define VM_EXIT_CONTROLS				0x0000400c
 #define VM_ENTRY_CONTROLS				0x00004012
 
+// for checks on host control registers
+#define HOST_CR0						0x00006c00
+#define	HOST_CR3						0x00006c02
+#define	HOST_CR4						0x00006c04
+// CH B.1.3, Vol 3
+#define HOST_ES_SELECTOR				0x00000c00
+#define HOST_CS_SELECTOR				0x00000c02
+#define HOST_SS_SELECTOR				0x00000c04
+#define HOST_DS_SELECTOR				0x00000c06
+#define HOST_FS_SELECTOR				0x00000c08
+#define HOST_GS_SELECTOR				0x00000c0a
+#define HOST_TR_SELECTOR				0x00000c0c
+#define HOST_FS_BASE					0x00006c06
+#define HOST_GS_BASE					0x00006c08
+#define HOST_TR_BASE					0x00006c0a
+#define HOST_GDTR_BASE					0x00006c0c
+#define HOST_IDTR_BASE					0x00006c0e
+#define HOST_IA32_SYSENTER_ESP			0x00006c10
+#define HOST_IA32_SYSENTER_EIP			0x00006c12
 
 #define MSR_IA32_VMX_CR0_FIXED0         0x00000486
 #define MSR_IA32_VMX_CR0_FIXED1         0x00000487
@@ -62,6 +80,8 @@
 
 uint64_t *vmxonRegion = NULL;
 uint64_t *vmcsRegion = NULL;
+
+
 // CH 30.3, Vol 3
 // VMXON instruction - Enter VMX operation
 static inline int _vmxon(uint64_t phys)
@@ -114,6 +134,114 @@ static inline int vmwrite(uint64_t encoding, uint64_t value)
 
 	return ret;
 }
+
+static inline uint64_t get_cr0(void)
+{
+	uint64_t cr0;
+
+	__asm__ __volatile__("mov %%cr0, %[cr0]"
+			     : /* output */ [cr0]"=r"(cr0));
+	return cr0;
+}
+
+static inline uint64_t get_cr3(void)
+{
+	uint64_t cr3;
+
+	__asm__ __volatile__("mov %%cr3, %[cr3]"
+			     : /* output */ [cr3]"=r"(cr3));
+	return cr3;
+}
+
+static inline uint64_t get_cr4(void)
+{
+	uint64_t cr4;
+
+	__asm__ __volatile__("mov %%cr4, %[cr4]"
+			     : /* output */ [cr4]"=r"(cr4));
+	return cr4;
+}
+
+
+static inline uint16_t get_es1(void)
+{
+	uint16_t es;
+
+	__asm__ __volatile__("mov %%es, %[es]"
+			     : /* output */ [es]"=rm"(es));
+	return es;
+}
+
+static inline uint16_t get_cs1(void)
+{
+	uint16_t cs;
+
+	__asm__ __volatile__("mov %%cs, %[cs]"
+			     : /* output */ [cs]"=rm"(cs));
+	return cs;
+}
+
+static inline uint16_t get_ss1(void)
+{
+	uint16_t ss;
+
+	__asm__ __volatile__("mov %%ss, %[ss]"
+			     : /* output */ [ss]"=rm"(ss));
+	return ss;
+}
+
+static inline uint16_t get_ds1(void)
+{
+	uint16_t ds;
+
+	__asm__ __volatile__("mov %%ds, %[ds]"
+			     : /* output */ [ds]"=rm"(ds));
+	return ds;
+}
+
+static inline uint16_t get_fs1(void)
+{
+	uint16_t fs;
+
+	__asm__ __volatile__("mov %%fs, %[fs]"
+			     : /* output */ [fs]"=rm"(fs));
+	return fs;
+}
+
+static inline uint16_t get_gs1(void)
+{
+	uint16_t gs;
+
+	__asm__ __volatile__("mov %%gs, %[gs]"
+			     : /* output */ [gs]"=rm"(gs));
+	return gs;
+}
+
+static inline uint16_t get_tr1(void)
+{
+	uint16_t tr;
+
+	__asm__ __volatile__("str %[tr]"
+			     : /* output */ [tr]"=rm"(tr));
+	return tr;
+}
+
+static inline uint64_t get_gdt_base1(void)
+{
+	struct desc_ptr gdt;
+	__asm__ __volatile__("sgdt %[gdt]"
+			     : /* output */ [gdt]"=m"(gdt));
+	return gdt.address;
+}
+
+static inline uint64_t get_idt_base1(void)
+{
+	struct desc_ptr idt;
+	__asm__ __volatile__("sidt %[idt]"
+			     : /* output */ [idt]"=m"(idt));
+	return idt.address;
+}
+
 
 uint32_t vmExit_reason(void) {
 	uint32_t exit_reason = vmreadz(VM_EXIT_REASON);
@@ -268,8 +396,10 @@ unsigned long long default1_controls(void){
 bool initVmcsControlField(void) {
 	// checking of any of the default1 controls may be 0:
 	//not doing it for now.
+
 	// CH A.3.1, Vol 3
-	// setting pin based controls
+	// setting pin based controls, proc based controls, vm exit controls
+	// and vm entry controls
 	uint32_t pinbased_control0 = __rdmsr1(MSR_IA32_VMX_PINBASED_CTLS);
 	uint32_t pinbased_control1 = __rdmsr1(MSR_IA32_VMX_PINBASED_CTLS) >> 32;
 	uint32_t procbased_control0 = __rdmsr1(MSR_IA32_VMX_PROCBASED_CTLS);
@@ -283,9 +413,16 @@ bool initVmcsControlField(void) {
 	// setting final value to write to control fields
 	uint32_t pinbased_control_final = (pinbased_control0 & pinbased_control1);
 	uint32_t procbased_control_final = (procbased_control0 & procbased_control1);
-	uint32_t procbased_secondary_control_final = (procbased_secondary_control0 & procbased_secondary_control0);
+	uint32_t procbased_secondary_control_final = (procbased_secondary_control0 & procbased_secondary_control1);
 	uint32_t vm_exit_control_final = (vm_exit_control0 & vm_exit_control1);
 	uint32_t vm_entry_control_final = (vm_entry_control0 & vm_entry_control1);
+
+	// CH 24.7.1, Vol 3
+	//for supporting 64 bit host
+	// maybe optional
+	uint64_t host_address_space = 1 << 9;
+	vm_exit_control_final = vm_exit_control_final | host_address_space;
+
 	// writing the value to control field
 	vmwrite(PIN_BASED_VM_EXEC_CONTROLS, pinbased_control_final);
 	vmwrite(PROC_BASED_VM_EXEC_CONTROLS, procbased_control_final);
@@ -293,7 +430,26 @@ bool initVmcsControlField(void) {
 	vmwrite(VM_EXIT_CONTROLS, vm_exit_control_final);
 	vmwrite(VM_ENTRY_CONTROLS, vm_entry_control_final);
 
-
+	// CH 26.2.2, Vol 3
+	// Checks on Host Control Registers and MSRs
+	vmwrite(HOST_CR0, get_cr0());
+	vmwrite(HOST_CR3, get_cr3());
+	vmwrite(HOST_CR4, get_cr4());
+	//setting host selectors fields
+	vmwrite(HOST_ES_SELECTOR, get_es1());
+	vmwrite(HOST_CS_SELECTOR, get_cs1());
+	vmwrite(HOST_SS_SELECTOR, get_ss1());
+	vmwrite(HOST_DS_SELECTOR, get_ds1());
+	vmwrite(HOST_FS_SELECTOR, get_fs1());
+	vmwrite(HOST_GS_SELECTOR, get_gs1());
+	vmwrite(HOST_TR_SELECTOR, get_tr1());
+	vmwrite(HOST_FS_BASE, __rdmsr1(MSR_FS_BASE));
+	vmwrite(HOST_GS_BASE, __rdmsr1(MSR_GS_BASE));
+	vmwrite(HOST_TR_BASE, 0);
+	vmwrite(HOST_GDTR_BASE, get_gdt_base1());
+	vmwrite(HOST_IDTR_BASE, get_idt_base1());
+	vmwrite(HOST_IA32_SYSENTER_ESP, __rdmsr1(MSR_IA32_SYSENTER_ESP));
+	vmwrite(HOST_IA32_SYSENTER_EIP, __rdmsr1(MSR_IA32_SYSENTER_EIP));
 	return true;
 }
 
