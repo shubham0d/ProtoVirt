@@ -65,12 +65,15 @@
 #define HOST_IDTR_BASE					0x00006c0e
 #define HOST_IA32_SYSENTER_ESP			0x00006c10
 #define HOST_IA32_SYSENTER_EIP			0x00006c12
+#define HOST_IA32_SYSENTER_CS			0x00004c00
+#define HOST_RSP						0x00006c14
+#define	HOST_RIP						0x00006c16
 
 #define MSR_IA32_VMX_CR0_FIXED0         0x00000486
 #define MSR_IA32_VMX_CR0_FIXED1         0x00000487
 #define MSR_IA32_VMX_CR4_FIXED0         0x00000488
 #define MSR_IA32_VMX_CR4_FIXED1         0x00000489
-
+#define MSR_IA32_SYSENTER_CS			0x00000174
 
 #define VM_EXIT_REASON			 		0x00004402
 #define VM_INSTRUCTION_ERROR			0x00004000  // CH 26.1, Vol 3
@@ -132,6 +135,35 @@ static inline int vmwrite(uint64_t encoding, uint64_t value)
 		: [value]"rm"(value), [encoding]"r"(encoding)
 		: "cc", "memory");
 
+	return ret;
+}
+
+static inline int vmlaunch(void)
+{
+	int ret;
+
+	__asm__ __volatile__("push %%rbp;"
+			     "push %%rcx;"
+			     "push %%rdx;"
+			     "push %%rsi;"
+			     "push %%rdi;"
+			     "push $0;"
+			     "vmwrite %%rsp, %[host_rsp];"
+			     "lea 1f(%%rip), %%rax;"
+			     "vmwrite %%rax, %[host_rip];"
+			     "vmlaunch;"
+			     "incq (%%rsp);"
+			     "1: pop %%rax;"
+			     "pop %%rdi;"
+			     "pop %%rsi;"
+			     "pop %%rdx;"
+			     "pop %%rcx;"
+			     "pop %%rbp;"
+			     : [ret]"=&a"(ret)
+			     : [host_rsp]"r"((uint64_t)HOST_RSP),
+			       [host_rip]"r"((uint64_t)HOST_RIP)
+			     : "memory", "cc", "rbx", "r8", "r9", "r10",
+			       "r11", "r12", "r13", "r14", "r15");
 	return ret;
 }
 
@@ -450,9 +482,15 @@ bool initVmcsControlField(void) {
 	vmwrite(HOST_IDTR_BASE, get_idt_base1());
 	vmwrite(HOST_IA32_SYSENTER_ESP, __rdmsr1(MSR_IA32_SYSENTER_ESP));
 	vmwrite(HOST_IA32_SYSENTER_EIP, __rdmsr1(MSR_IA32_SYSENTER_EIP));
+	vmwrite(HOST_IA32_SYSENTER_CS, rdmsr(MSR_IA32_SYSENTER_CS));
 	return true;
 }
 
+bool initVmLaunch(void){
+	int vmlaunch_status = vmlaunch();
+	printk(KERN_INFO "VMLAUNCH status is %d!\n", vmlaunch_status);
+	return true;
+}
 bool vmxoffOperation(void)
 {
 	if (deallocate_vmxon_region()) {
@@ -519,6 +557,13 @@ int __init start_init(void)
 	}
 	else {
 		printk(KERN_INFO "Initializing of control fields to the most basic settings succeeded! CONTINUING");
+	}
+	if (!initVmLaunch()) {
+		printk(KERN_INFO "VMLAUNCH failed! EXITING");
+		return 0;
+	}
+	else {
+		printk(KERN_INFO "VMLAUNCH succeeded! CONTINUING");
 	}
 	if (!vmxoffOperation()) {
 		printk(KERN_INFO "VMXOFF operation failed! EXITING");
