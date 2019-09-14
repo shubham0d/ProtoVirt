@@ -68,6 +68,15 @@
 #define HOST_IA32_SYSENTER_CS			0x00004c00
 #define HOST_RSP						0x00006c14
 #define	HOST_RIP						0x00006c16
+#define VM_EXIT_LOAD_IA32_PAT			0x00080000
+#define VM_EXIT_LOAD_IA32_EFER			0x00200000
+#define VM_EXIT_LOAD_IA32_PERF_GLOBAL_CTRL	0x00001000
+#define MSR_IA32_CR_PAT					0x00000277
+#define MSR_EFER						0xc0000080
+#define MSR_CORE_PERF_GLOBAL_CTRL		0x0000038f
+#define HOST_IA32_PAT					0x00002c00
+#define HOST_IA32_EFER					0x00002c02
+#define HOST_IA32_PERF_GLOBAL_CTRL		0x00002c04
 
 #define MSR_IA32_VMX_CR0_FIXED0         0x00000486
 #define MSR_IA32_VMX_CR0_FIXED1         0x00000487
@@ -84,6 +93,16 @@
 uint64_t *vmxonRegion = NULL;
 uint64_t *vmcsRegion = NULL;
 
+
+
+struct desc64 {
+	uint16_t limit0;
+	uint16_t base0;
+	unsigned base1:8, s:1, type:4, dpl:2, p:1;
+	unsigned limit1:4, avl:1, l:1, db:1, g:1, base2:8;
+	uint32_t base3;
+	uint32_t zero1;
+} __attribute__((packed));
 
 // CH 30.3, Vol 3
 // VMXON instruction - Enter VMX operation
@@ -138,7 +157,7 @@ static inline int vmwrite(uint64_t encoding, uint64_t value)
 	return ret;
 }
 
-static inline int vmlaunch(void)
+static inline int _vmlaunch(void)
 {
 	int ret;
 
@@ -423,6 +442,12 @@ unsigned long long default1_controls(void){
 	return check_default1_controls;
 }
 
+static inline uint64_t get_desc64_base(const struct desc64 *desc)
+{
+	return ((uint64_t)desc->base3 << 32) |
+		(desc->base0 | ((desc->base1) << 16) | ((desc->base2) << 24));
+}
+
 // CH 26.2.1, Vol 3
 // Initializing VMCS control field
 bool initVmcsControlField(void) {
@@ -467,6 +492,16 @@ bool initVmcsControlField(void) {
 	vmwrite(HOST_CR0, get_cr0());
 	vmwrite(HOST_CR3, get_cr3());
 	vmwrite(HOST_CR4, get_cr4());
+	/* optional stuff
+	uint32_t exit_controls = vmreadz(VM_EXIT_CONTROLS);
+	if (exit_controls & VM_EXIT_LOAD_IA32_PAT)
+		vmwrite(HOST_IA32_PAT, __rdmsr1(MSR_IA32_CR_PAT));
+	if (exit_controls & VM_EXIT_LOAD_IA32_EFER)
+		vmwrite(HOST_IA32_EFER, __rdmsr1(MSR_EFER));
+	if (exit_controls & VM_EXIT_LOAD_IA32_PERF_GLOBAL_CTRL)
+		vmwrite(HOST_IA32_PERF_GLOBAL_CTRL,
+			__rdmsr1(MSR_CORE_PERF_GLOBAL_CTRL));
+	*/
 	//setting host selectors fields
 	vmwrite(HOST_ES_SELECTOR, get_es1());
 	vmwrite(HOST_CS_SELECTOR, get_cs1());
@@ -477,17 +512,17 @@ bool initVmcsControlField(void) {
 	vmwrite(HOST_TR_SELECTOR, get_tr1());
 	vmwrite(HOST_FS_BASE, __rdmsr1(MSR_FS_BASE));
 	vmwrite(HOST_GS_BASE, __rdmsr1(MSR_GS_BASE));
-	vmwrite(HOST_TR_BASE, 0);
+	vmwrite(HOST_TR_BASE, get_desc64_base((struct desc64 *)(get_gdt_base1() + get_tr1())));
 	vmwrite(HOST_GDTR_BASE, get_gdt_base1());
 	vmwrite(HOST_IDTR_BASE, get_idt_base1());
 	vmwrite(HOST_IA32_SYSENTER_ESP, __rdmsr1(MSR_IA32_SYSENTER_ESP));
 	vmwrite(HOST_IA32_SYSENTER_EIP, __rdmsr1(MSR_IA32_SYSENTER_EIP));
-	vmwrite(HOST_IA32_SYSENTER_CS, rdmsr(MSR_IA32_SYSENTER_CS));
+	vmwrite(HOST_IA32_SYSENTER_CS, __rdmsr(MSR_IA32_SYSENTER_CS));
 	return true;
 }
 
 bool initVmLaunch(void){
-	int vmlaunch_status = vmlaunch();
+	int vmlaunch_status = _vmlaunch();
 	printk(KERN_INFO "VMLAUNCH status is %d!\n", vmlaunch_status);
 	return true;
 }
