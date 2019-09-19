@@ -45,7 +45,9 @@
 #define PROC2_BASED_VM_EXEC_CONTROLS	0x0000401e
 #define VM_EXIT_CONTROLS				0x0000400c
 #define VM_ENTRY_CONTROLS				0x00004012
-
+// CH B.2.1
+// Table B-4. Encodings for 64-Bit Control Fields
+#define EPT_POINTER						0x0000201a
 // for checks on host control registers
 #define HOST_CR0						0x00006c00
 #define	HOST_CR3						0x00006c02
@@ -77,6 +79,60 @@
 #define HOST_IA32_PAT					0x00002c00
 #define HOST_IA32_EFER					0x00002c02
 #define HOST_IA32_PERF_GLOBAL_CTRL		0x00002c04
+
+// for Initializing guest control area
+// CH B.1.2, Vol 3
+#define GUEST_ES_SELECTOR				0x00000800
+#define GUEST_CS_SELECTOR				0x00000802
+#define GUEST_SS_SELECTOR				0x00000804
+#define GUEST_DS_SELECTOR				0x00000806
+#define GUEST_FS_SELECTOR				0x00000808
+#define GUEST_GS_SELECTOR				0x0000080a
+#define GUEST_LDTR_SELECTOR				0x0000080c
+#define GUEST_TR_SELECTOR				0x0000080e
+// CH B.1.3, Vol 3
+#define GUEST_IA32_DEBUGCTL				0x00002802
+#define GUEST_IA32_PAT					0x00002804
+#define GUEST_IA32_EFER					0x00002806
+// CH B.3.3, Vol 3
+#define GUEST_ES_LIMIT					0x00004800
+#define GUEST_CS_LIMIT					0x00004802
+#define GUEST_SS_LIMIT					0x00004804
+#define GUEST_DS_LIMIT					0x00004806
+#define GUEST_FS_LIMIT					0x00004808
+#define GUEST_GS_LIMIT					0x0000480a
+#define GUEST_LDTR_LIMIT				0x0000480c
+#define GUEST_TR_LIMIT					0x0000480e
+#define GUEST_GDTR_LIMIT				0x00004810
+#define GUEST_IDTR_LIMIT				0x00004812
+#define GUEST_ES_AR_BYTES				0x00004814
+#define GUEST_CS_AR_BYTES				0x00004816
+#define GUEST_SS_AR_BYTES				0x00004818
+#define GUEST_DS_AR_BYTES				0x0000481a
+#define GUEST_FS_AR_BYTES				0x0000481c
+#define GUEST_GS_AR_BYTES				0x0000481e
+#define GUEST_LDTR_AR_BYTES				0x00004820
+#define GUEST_TR_AR_BYTES				0x00004822
+// CH B.4.3, Vol 3
+#define GUEST_CR0						0x00006800
+#define GUEST_CR3						0x00006802
+#define GUEST_CR4						0x00006804
+#define GUEST_ES_BASE					0x00006806
+#define GUEST_CS_BASE					0x00006808
+#define GUEST_SS_BASE					0x0000680a
+#define GUEST_DS_BASE					0x0000680c
+#define GUEST_FS_BASE					0x0000680e
+#define GUEST_GS_BASE					0x00006810
+#define GUEST_LDTR_BASE					0x00006812
+#define GUEST_TR_BASE					0x00006814
+#define GUEST_GDTR_BASE					0x00006816
+#define GUEST_IDTR_BASE					0x00006818
+#define GUEST_DR7						0x0000681a
+#define	GUEST_RSP						0x0000681c
+#define	GUEST_RIP						0x0000681e
+#define	GUEST_RFLAGS					0x00006820
+
+#define ACTIVATE_SECONDARY_CONTROLS		(1<<31)
 
 #define MSR_IA32_VMX_CR0_FIXED0         0x00000486
 #define MSR_IA32_VMX_CR0_FIXED1         0x00000487
@@ -479,7 +535,15 @@ bool initVmcsControlField(void) {
 	// maybe optional
 	uint64_t host_address_space = 1 << 9;
 	vm_exit_control_final = vm_exit_control_final | host_address_space;
+	// for enabling unrestricted guest mode
+	// maybe optional
+	uint64_t unrestricted_guest = 1 << 7;
+	uint64_t procbased_control_final = procbased_control_final | ACTIVATE_SECONDARY_CONTROLS;
+	uint32_t procbased_secondary_control_final = procbased_secondary_control_final | unrestricted_guest;
 
+	// for enabling ept
+	// maybe optional
+	uint64_t enabling_ept = 1 << 1;
 	// writing the value to control field
 	vmwrite(PIN_BASED_VM_EXEC_CONTROLS, pinbased_control_final);
 	vmwrite(PROC_BASED_VM_EXEC_CONTROLS, procbased_control_final);
@@ -518,6 +582,72 @@ bool initVmcsControlField(void) {
 	vmwrite(HOST_IA32_SYSENTER_ESP, __rdmsr1(MSR_IA32_SYSENTER_ESP));
 	vmwrite(HOST_IA32_SYSENTER_EIP, __rdmsr1(MSR_IA32_SYSENTER_EIP));
 	vmwrite(HOST_IA32_SYSENTER_CS, __rdmsr(MSR_IA32_SYSENTER_CS));
+	// CH 26.3, Vol 3
+	// setting the guest control area
+	/* setup of selectors according to linux kernel vmx.c module
+	vmwrite(GUEST_ES_SELECTOR, vmreadz(HOST_ES_SELECTOR));
+	vmwrite(GUEST_CS_SELECTOR, vmreadz(HOST_CS_SELECTOR));
+	vmwrite(GUEST_SS_SELECTOR, vmreadz(HOST_SS_SELECTOR));
+	vmwrite(GUEST_DS_SELECTOR, vmreadz(HOST_DS_SELECTOR));
+	vmwrite(GUEST_FS_SELECTOR, vmreadz(HOST_FS_SELECTOR));
+	vmwrite(GUEST_GS_SELECTOR, vmreadz(HOST_GS_SELECTOR));
+	vmwrite(GUEST_TR_SELECTOR, vmreadz(HOST_TR_SELECTOR));
+	vmwrite(GUEST_LDTR_SELECTOR, 0);
+	*/
+	vmwrite(GUEST_ES_SELECTOR, 0);
+	vmwrite(GUEST_CS_SELECTOR, 0);
+	vmwrite(GUEST_SS_SELECTOR, 0);
+	vmwrite(GUEST_DS_SELECTOR, 0);
+	vmwrite(GUEST_FS_SELECTOR, 0);
+	vmwrite(GUEST_GS_SELECTOR, 0);
+	vmwrite(GUEST_TR_SELECTOR, 0);
+	vmwrite(GUEST_LDTR_SELECTOR, 0);
+
+	vmwrite(GUEST_IA32_PAT, 0x0007_0406_0007_0406);
+	vmwrite(GUEST_IA32_DEBUGCTL, 0);
+	vmwrite(GUEST_IA32_EFER, 0);
+
+	vmwrite(GUEST_ES_LIMIT, 0xffff);
+	vmwrite(GUEST_CS_LIMIT, 0xffff);
+	vmwrite(GUEST_SS_LIMIT, 0xffff);
+	vmwrite(GUEST_DS_LIMIT, 0xffff);
+	vmwrite(GUEST_FS_LIMIT, 0xffff);
+	vmwrite(GUEST_GS_LIMIT, 0xffff);
+	vmwrite(GUEST_LDTR_LIMIT, 0xffff);
+	vmwrite(GUEST_TR_LIMIT, 0xffff);
+	vmwrite(GUEST_GDTR_LIMIT, 0xffff);
+	vmwrite(GUEST_IDTR_LIMIT, 0xffff);
+
+	vmwrite(GUEST_ES_AR_BYTES, 0x93);
+	vmwrite(GUEST_CS_AR_BYTES, 0x93);
+	vmwrite(GUEST_SS_AR_BYTES, 0x93);
+	vmwrite(GUEST_DS_AR_BYTES, 0x93);
+	vmwrite(GUEST_FS_AR_BYTES, 0x93);
+	vmwrite(GUEST_GS_AR_BYTES, 0x93);
+	vmwrite(GUEST_LDTR_AR_BYTES, 0x82);
+	vmwrite(GUEST_TR_AR_BYTES, 0x82);
+
+	vmwrite(GUEST_CR0, 0x6000_0010);
+	vmwrite(GUEST_CR3, 0);
+	vmwrite(GUEST_CR4, 0);
+	vmwrite(GUEST_ES_BASE, 0);
+	vmwrite(GUEST_CS_BASE, 0);
+	vmwrite(GUEST_SS_BASE, 0);
+	vmwrite(GUEST_DS_BASE, 0);
+	vmwrite(GUEST_GS_BASE, 0);
+	vmwrite(GUEST_LDTR_BASE, 0);
+	vmwrite(GUEST_TR_BASE, 0);
+	vmwrite(GUEST_GDTR_BASE, 0);
+	vmwrite(GUEST_IDTR_BASE, 0);
+
+	vmwrite(GUEST_DR7, 0x400);
+	vmwrite(GUEST_RSP, 0);
+	vmwrite(GUEST_RIP, 0xfff0);
+	vmwrite(GUEST_RFLAGS, 2);
+
+
+	vmwrite(PROC_BASED_VM_EXEC_CONTROLS, procbased_control_final);
+	vmwrite(PROC2_BASED_VM_EXEC_CONTROLS, procbased_secondary_control_final);
 	return true;
 }
 
