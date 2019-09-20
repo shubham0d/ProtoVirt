@@ -1,4 +1,4 @@
-# Hypervisior-from-scratch
+# ProtoVirt
 An attempt to create own hypervisior from scratch in linux
 
 ## Usage
