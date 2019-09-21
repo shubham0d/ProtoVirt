@@ -131,6 +131,7 @@
 #define	GUEST_RSP						0x0000681c
 #define	GUEST_RIP						0x0000681e
 #define	GUEST_RFLAGS					0x00006820
+#define VMCS_LINK_POINTER				0x00002800
 
 #define ACTIVATE_SECONDARY_CONTROLS		(1<<31)
 
@@ -533,17 +534,17 @@ bool initVmcsControlField(void) {
 	// CH 24.7.1, Vol 3
 	//for supporting 64 bit host
 	// maybe optional
-	uint64_t host_address_space = 1 << 9;
+	uint32_t host_address_space = 1 << 9;
 	vm_exit_control_final = vm_exit_control_final | host_address_space;
+
+	procbased_control_final = procbased_control_final | ACTIVATE_SECONDARY_CONTROLS;
 	// for enabling unrestricted guest mode
 	// maybe optional
-	uint64_t unrestricted_guest = 1 << 7;
-	uint64_t procbased_control_final = procbased_control_final | ACTIVATE_SECONDARY_CONTROLS;
-	uint32_t procbased_secondary_control_final = procbased_secondary_control_final | unrestricted_guest;
-
+	//uint64_t unrestricted_guest = 1 << 7;
 	// for enabling ept
 	// maybe optional
-	uint64_t enabling_ept = 1 << 1;
+	//uint64_t enabling_ept = 1 << 1;
+	//uint32_t procbased_secondary_control_final = procbased_secondary_control_final | unrestricted_guest | enabling_ept;
 	// writing the value to control field
 	vmwrite(PIN_BASED_VM_EXEC_CONTROLS, pinbased_control_final);
 	vmwrite(PROC_BASED_VM_EXEC_CONTROLS, procbased_control_final);
@@ -566,6 +567,9 @@ bool initVmcsControlField(void) {
 		vmwrite(HOST_IA32_PERF_GLOBAL_CTRL,
 			__rdmsr1(MSR_CORE_PERF_GLOBAL_CTRL));
 	*/
+	// Doing EPT stuff
+	// Move to another function later.
+
 	//setting host selectors fields
 	vmwrite(HOST_ES_SELECTOR, get_es1());
 	vmwrite(HOST_CS_SELECTOR, get_cs1());
@@ -603,9 +607,10 @@ bool initVmcsControlField(void) {
 	vmwrite(GUEST_TR_SELECTOR, 0);
 	vmwrite(GUEST_LDTR_SELECTOR, 0);
 
-	vmwrite(GUEST_IA32_PAT, 0x0007_0406_0007_0406);
+	vmwrite(VMCS_LINK_POINTER, !0);//or 0xffffffff
+	vmwrite(GUEST_IA32_PAT, vmreadz(HOST_IA32_PAT));
 	vmwrite(GUEST_IA32_DEBUGCTL, 0);
-	vmwrite(GUEST_IA32_EFER, 0);
+	vmwrite(GUEST_IA32_EFER, vmreadz(HOST_IA32_EFER));
 
 	vmwrite(GUEST_ES_LIMIT, 0xffff);
 	vmwrite(GUEST_CS_LIMIT, 0xffff);
@@ -627,7 +632,7 @@ bool initVmcsControlField(void) {
 	vmwrite(GUEST_LDTR_AR_BYTES, 0x82);
 	vmwrite(GUEST_TR_AR_BYTES, 0x82);
 
-	vmwrite(GUEST_CR0, 0x6000_0010);
+	vmwrite(GUEST_CR0, 0x0010);
 	vmwrite(GUEST_CR3, 0);
 	vmwrite(GUEST_CR4, 0);
 	vmwrite(GUEST_ES_BASE, 0);
@@ -645,15 +650,15 @@ bool initVmcsControlField(void) {
 	vmwrite(GUEST_RIP, 0xfff0);
 	vmwrite(GUEST_RFLAGS, 2);
 
-
-	vmwrite(PROC_BASED_VM_EXEC_CONTROLS, procbased_control_final);
-	vmwrite(PROC2_BASED_VM_EXEC_CONTROLS, procbased_secondary_control_final);
 	return true;
 }
 
-bool initVmLaunch(void){
+bool initVmLaunchProcess(void){
 	int vmlaunch_status = _vmlaunch();
 	printk(KERN_INFO "VMLAUNCH status is %d!\n", vmlaunch_status);
+	uint32_t exit_reason;
+	exit_reason = vmExit_reason();
+	printk(KERN_INFO "VMLAUNCH status is %d!\n", exit_reason);
 	return true;
 }
 bool vmxoffOperation(void)
@@ -723,7 +728,7 @@ int __init start_init(void)
 	else {
 		printk(KERN_INFO "Initializing of control fields to the most basic settings succeeded! CONTINUING");
 	}
-	if (!initVmLaunch()) {
+	if (!initVmLaunchProcess()) {
 		printk(KERN_INFO "VMLAUNCH failed! EXITING");
 		return 0;
 	}
