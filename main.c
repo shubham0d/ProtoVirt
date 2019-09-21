@@ -350,12 +350,12 @@ static inline uint64_t get_idt_base1(void)
 	return idt.address;
 }
 
-
+/*
 uint32_t vmExit_reason(void) {
 	uint32_t exit_reason = vmreadz(VM_EXIT_REASON);
 	return exit_reason;
 }
-
+*
 /* Dealloc vmxon region*/
 bool deallocate_vmxon_region(void) {
 	if(vmxonRegion){
@@ -404,6 +404,15 @@ static inline uint32_t vmcs_revision_id(void)
 {
 	return __rdmsr1(MSR_IA32_VMX_BASIC);
 }
+// CH 27.2.1, Vol 3
+// Basic VM exit reason
+uint32_t vmExit_reason(void) {
+	uint32_t exit_reason = vmreadz(VM_EXIT_REASON);
+	exit_reason = exit_reason & 0xffff;
+	return exit_reason;
+}
+
+
 // CH 23.7, Vol 3
 // Enter in VMX mode
 bool allocVmcsRegion(void) {
@@ -655,10 +664,8 @@ bool initVmcsControlField(void) {
 
 bool initVmLaunchProcess(void){
 	int vmlaunch_status = _vmlaunch();
-	printk(KERN_INFO "VMLAUNCH status is %d!\n", vmlaunch_status);
-	uint32_t exit_reason;
-	exit_reason = vmExit_reason();
-	printk(KERN_INFO "VMLAUNCH status is %d!\n", exit_reason);
+	printk(KERN_INFO "VMLAUNCH status is %lu!\n", (unsigned long)vmlaunch_status);
+	printk(KERN_INFO "Vm exit reason is %lu!\n", (unsigned long)vmExit_reason());
 	return true;
 }
 bool vmxoffOperation(void)
