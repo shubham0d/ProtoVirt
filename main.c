@@ -763,4 +763,4 @@ module_exit(end_exit);
 
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_AUTHOR("Shubham Dubey");
-MODULE_DESCRIPTION("Lightweight Hypervisior ");
+MODULE_DESCRIPTION("ProtoVirt- A Lightweight Hypervisior ");
