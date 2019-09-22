@@ -549,11 +549,11 @@ static inline uint64_t get_desc64_base(const struct desc64 *desc)
 	return ((uint64_t)desc->base3 << 32) |
 		(desc->base0 | ((desc->base1) << 16) | ((desc->base2) << 24));
 }
-#define PORT_L0_EXIT		0x2000
+
 static void guest_code(void)
 {
 	/* Exit to L0 */
-    asm volatile("vmcall");
+    asm volatile("cpuid");
 
 }
 
@@ -566,7 +566,7 @@ bool initVmcsControlField(void) {
 	// CH A.3.1, Vol 3
 	// setting pin based controls, proc based controls, vm exit controls
 	// and vm entry controls
-	/*
+
 	uint32_t pinbased_control0 = __rdmsr1(MSR_IA32_VMX_PINBASED_CTLS);
 	uint32_t pinbased_control1 = __rdmsr1(MSR_IA32_VMX_PINBASED_CTLS) >> 32;
 	uint32_t procbased_control0 = __rdmsr1(MSR_IA32_VMX_PROCBASED_CTLS);
@@ -580,7 +580,7 @@ bool initVmcsControlField(void) {
 
 
 	// setting final value to write to control fields
-	uint32_t pinbased_control_final = (pinbased_control0 & pinbased_control1) | 32;
+	uint32_t pinbased_control_final = (pinbased_control0 & pinbased_control1);
 	uint32_t procbased_control_final = (procbased_control0 & procbased_control1);
 	uint32_t procbased_secondary_control_final = (procbased_secondary_control0 & procbased_secondary_control1);
 	uint32_t vm_exit_control_final = (vm_exit_control0 & vm_exit_control1);
@@ -600,7 +600,7 @@ bool initVmcsControlField(void) {
 	// maybe optional
 	//uint64_t enabling_ept = 1 << 1;
 	//uint32_t procbased_secondary_control_final = procbased_secondary_control_final | unrestricted_guest | enabling_ept;
-	// writing the value to control field
+	// writing the value to control field*/
 	vmwrite(PIN_BASED_VM_EXEC_CONTROLS, pinbased_control_final);
 	vmwrite(PROC_BASED_VM_EXEC_CONTROLS, procbased_control_final);
 	vmwrite(PROC2_BASED_VM_EXEC_CONTROLS, procbased_secondary_control_final);
@@ -609,32 +609,13 @@ bool initVmcsControlField(void) {
 	// to ignore the guest exception
 	vmwrite(EXCEPTION_BITMAP, 0);
 
-	*/
 	vmwrite(VIRTUAL_PROCESSOR_ID, 0);
-	vmwrite(POSTED_INTR_NV, 0);
 
-	vmwrite(PIN_BASED_VM_EXEC_CONTROLS, __rdmsr1(MSR_IA32_VMX_TRUE_PINBASED_CTLS));
-	if (!vmwrite(PROC2_BASED_VM_EXEC_CONTROLS, 0))
-		vmwrite(PROC_BASED_VM_EXEC_CONTROLS,
-			__rdmsr1(MSR_IA32_VMX_TRUE_PROCBASED_CTLS) | CPU_BASED_ACTIVATE_SECONDARY_CONTROLS);
-	else
-		vmwrite(PROC_BASED_VM_EXEC_CONTROLS, __rdmsr1(MSR_IA32_VMX_TRUE_PROCBASED_CTLS));
-	vmwrite(EXCEPTION_BITMAP, 0);
-	vmwrite(PAGE_FAULT_ERROR_CODE_MASK, 0);
-	vmwrite(PAGE_FAULT_ERROR_CODE_MATCH, -1); /* Never match */
-	vmwrite(CR3_TARGET_COUNT, 0);
 	vmwrite(VM_EXIT_CONTROLS, __rdmsr1(MSR_IA32_VMX_EXIT_CTLS) |
 		VM_EXIT_HOST_ADDR_SPACE_SIZE);	  /* 64-bit host */
-	vmwrite(VM_EXIT_MSR_STORE_COUNT, 0);
-	vmwrite(VM_EXIT_MSR_LOAD_COUNT, 0);
 	vmwrite(VM_ENTRY_CONTROLS, __rdmsr1(MSR_IA32_VMX_ENTRY_CTLS) |
 		VM_ENTRY_IA32E_MODE);		  /* 64-bit guest */
-	vmwrite(VM_ENTRY_MSR_LOAD_COUNT, 0);
-	vmwrite(VM_ENTRY_INTR_INFO_FIELD, 0);
-	vmwrite(TPR_THRESHOLD, 0);
 
-	vmwrite(CR0_GUEST_HOST_MASK, 0);
-	vmwrite(CR4_GUEST_HOST_MASK, 0);
 	vmwrite(CR0_READ_SHADOW, get_cr0());
 	vmwrite(CR4_READ_SHADOW, get_cr4());
 
