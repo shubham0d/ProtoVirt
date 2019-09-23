@@ -52,23 +52,6 @@ bool vmxSupport(void)
 }
 
 
-// CH 24.2, Vol 3
-// VMCS region
-bool vmcsOperations(void) {
-	long int vmcsPhyRegion = 0;
-	if (allocVmcsRegion()){
-		vmcsPhyRegion = __pa(vmcsRegion);
-		*(uint32_t *)vmcsRegion = vmcs_revision_id();
-	}
-	else {
-		return false;
-	}
-
-	//making the vmcs active and current
-	if (_vmptrld(vmcsPhyRegion))
-		return false;
-	return true;
-}
 // CH 23.7, Vol 3
 // Enter in VMX mode
 bool getVmxOperation(void) {
@@ -93,7 +76,6 @@ bool getVmxOperation(void) {
 	required = FEATURE_CONTROL_VMXON_ENABLED_OUTSIDE_SMX;
 	required |= FEATURE_CONTROL_LOCKED;
 	feature_control = __rdmsr1(MSR_IA32_FEATURE_CONTROL);
-	printk(KERN_INFO "RDMS output is %ld", (long)feature_control);
 
 	if ((feature_control & required) != required) {
 		wrmsr(MSR_IA32_FEATURE_CONTROL, feature_control | required, low1);
@@ -127,6 +109,24 @@ bool getVmxOperation(void) {
 	return true;
 }
 
+
+// CH 24.2, Vol 3
+// allocating VMCS region
+bool vmcsOperations(void) {
+	long int vmcsPhyRegion = 0;
+	if (allocVmcsRegion()){
+		vmcsPhyRegion = __pa(vmcsRegion);
+		*(uint32_t *)vmcsRegion = vmcs_revision_id();
+	}
+	else {
+		return false;
+	}
+
+	//making the vmcs active and current
+	if (_vmptrld(vmcsPhyRegion))
+		return false;
+	return true;
+}
 
 // CH 26.2.1, Vol 3
 // Initializing VMCS control field
@@ -172,7 +172,7 @@ bool initVmcsControlField(void) {
 	//uint32_t procbased_secondary_control_final = procbased_secondary_control_final | unrestricted_guest | enabling_ept;
 	*/
 
-	// writing the value to control field*/
+	// writing the value to control field
 	vmwrite(PIN_BASED_VM_EXEC_CONTROLS, pinbased_control_final);
 	vmwrite(PROC_BASED_VM_EXEC_CONTROLS, procbased_control_final);
 	vmwrite(PROC2_BASED_VM_EXEC_CONTROLS, procbased_secondary_control_final);
@@ -182,12 +182,12 @@ bool initVmcsControlField(void) {
 	// maybe optional
 	vmwrite(EXCEPTION_BITMAP, 0);
 
-	vmwrite(VIRTUAL_PROCESSOR_ID, 0);
+	//vmwrite(VIRTUAL_PROCESSOR_ID, 0);
 
 	vmwrite(VM_EXIT_CONTROLS, __rdmsr1(MSR_IA32_VMX_EXIT_CTLS) |
-		VM_EXIT_HOST_ADDR_SPACE_SIZE);	  /* 64-bit host */
+		VM_EXIT_HOST_ADDR_SPACE_SIZE);
 	vmwrite(VM_ENTRY_CONTROLS, __rdmsr1(MSR_IA32_VMX_ENTRY_CTLS) |
-		VM_ENTRY_IA32E_MODE);		  /* 64-bit guest */
+		VM_ENTRY_IA32E_MODE);
 
 
 	// CH 26.2.2, Vol 3
@@ -293,8 +293,10 @@ bool initVmcsControlField(void) {
 
 bool initVmLaunchProcess(void){
 	int vmlaunch_status = _vmlaunch();
-	printk(KERN_INFO "VMLAUNCH status is %lu!\n", (unsigned long)vmlaunch_status);
-	printk(KERN_INFO "Vm exit reason is-> %lu!\n", (unsigned long)vmExit_reason());
+	if (vmlaunch_status != 0){
+		return false;
+	}
+	printk(KERN_INFO "VM exit reason is %lu!\n", (unsigned long)vmExit_reason());
 	return true;
 }
 bool vmxoffOperation(void)
@@ -332,11 +334,11 @@ int __init start_init(void)
 		printk(KERN_INFO "VMX Operation succeeded! CONTINUING");
 	}
 	if (!vmcsOperations()) {
-		printk(KERN_INFO "VMCS Operation failed! EXITING");
+		printk(KERN_INFO "VMCS Allocation failed! EXITING");
 		return 0;
 	}
 	else {
-		printk(KERN_INFO "VMX Operation succeeded! CONTINUING");
+		printk(KERN_INFO "VMCS Allocation succeeded! CONTINUING");
 	}
 	if (!initVmcsControlField()) {
 		printk(KERN_INFO "Initialization of VMCS Control field failed! EXITING");
@@ -352,25 +354,27 @@ int __init start_init(void)
 	else {
 		printk(KERN_INFO "VMLAUNCH succeeded! CONTINUING");
 	}
-	if (!vmxoffOperation()) {
+
+    if (!vmxoffOperation()) {
 		printk(KERN_INFO "VMXOFF operation failed! EXITING");
 		return 0;
 	}
 	else {
-		printk(KERN_INFO "VMXOFF Operation succeeded! CONTINUING");
+		printk(KERN_INFO "VMXOFF Operation succeeded! CONTINUING\n");
 	}
     return 0;
 }
 
 static void __exit end_exit(void)
 {
-    printk(KERN_INFO "Bye Bye\n");
+    printk(KERN_INFO "Unloading the driver\n");
+	return;
 }
 
 module_init(start_init);
 module_exit(end_exit);
 
 
-MODULE_LICENSE("Dual BSD/GPL");
+MODULE_LICENSE("GPL V3");
 MODULE_AUTHOR("Shubham Dubey");
-MODULE_DESCRIPTION("ProtoVirt- A Lightweight Hypervisior ");
+MODULE_DESCRIPTION("ProtoVirt- A minimalistic Hypervisior ");
