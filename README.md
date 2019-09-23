@@ -6,7 +6,11 @@ To explain this complex process I have started this project to create my own hyp
 I have developed it as linux kernel module and continously adding new functionality.
 
 ## Usage
-
 Step 1: `make`
 <br/>
 Step 2: `sudo insmod protovirt.ko`
+
+
+## Modifications
+`guest_code()` is the function that will run after vmlaunch (VM Non-root code). Change it according to your requirement.
+Don't forget to update `GUEST_STACK_SIZE` macro for bigger stack for guest.
