@@ -20,5 +20,5 @@ clean:
 
 else
         # called from kernel build system: just declare what our modules are
-		obj-m := main.o
+		obj-m := protovirt.o
 endif
