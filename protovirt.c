@@ -182,7 +182,7 @@ bool initVmcsControlField(void) {
 	// maybe optional
 	vmwrite(EXCEPTION_BITMAP, 0);
 
-	//vmwrite(VIRTUAL_PROCESSOR_ID, 0);
+	vmwrite(VIRTUAL_PROCESSOR_ID, 0);
 
 	vmwrite(VM_EXIT_CONTROLS, __rdmsr1(MSR_IA32_VMX_EXIT_CTLS) |
 		VM_EXIT_HOST_ADDR_SPACE_SIZE);
