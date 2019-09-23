@@ -425,20 +425,21 @@ bool initVmcsControlField(void) {
 	uint32_t vm_exit_control_final = (vm_exit_control0 & vm_exit_control1);
 	uint32_t vm_entry_control_final = (vm_entry_control0 & vm_entry_control1);
 
-	// CH 24.7.1, Vol 3
-	//for supporting 64 bit host
-	// maybe optional
+	/* CH 24.7.1, Vol 3
+	// for supporting 64 bit host
 	//uint32_t host_address_space = 1 << 9;
-	//vm_exit_control_final = vm_exit_control_final | host_address_space;
-
-	procbased_control_final = procbased_control_final | ACTIVATE_SECONDARY_CONTROLS;
-	// for enabling unrestricted guest mode
-	// maybe optional
-	//uint64_t unrestricted_guest = 1 << 7;
+	vm_exit_control_final = vm_exit_control_final | host_address_space;
+	*/
+	/* To enable secondary controls
+	// procbased_control_final = procbased_control_final | ACTIVATE_SECONDARY_CONTROLS;
+	*/
+	/* for enabling unrestricted guest mode
+	uint64_t unrestricted_guest = 1 << 7;
 	// for enabling ept
-	// maybe optional
-	//uint64_t enabling_ept = 1 << 1;
+	uint64_t enabling_ept = 1 << 1;
 	//uint32_t procbased_secondary_control_final = procbased_secondary_control_final | unrestricted_guest | enabling_ept;
+	*/
+
 	// writing the value to control field*/
 	vmwrite(PIN_BASED_VM_EXEC_CONTROLS, pinbased_control_final);
 	vmwrite(PROC_BASED_VM_EXEC_CONTROLS, procbased_control_final);
@@ -446,6 +447,7 @@ bool initVmcsControlField(void) {
 	vmwrite(VM_EXIT_CONTROLS, vm_exit_control_final);
 	vmwrite(VM_ENTRY_CONTROLS, vm_entry_control_final);
 	// to ignore the guest exception
+	// maybe optional
 	vmwrite(EXCEPTION_BITMAP, 0);
 
 	vmwrite(VIRTUAL_PROCESSOR_ID, 0);
@@ -455,34 +457,12 @@ bool initVmcsControlField(void) {
 	vmwrite(VM_ENTRY_CONTROLS, __rdmsr1(MSR_IA32_VMX_ENTRY_CTLS) |
 		VM_ENTRY_IA32E_MODE);		  /* 64-bit guest */
 
-	//vmwrite(CR0_READ_SHADOW, get_cr0());
-	//vmwrite(CR4_READ_SHADOW, get_cr4());
 
-	/* from kvm vmx.c source code
-	vmwrite(PIN_BASED_VM_EXEC_CONTROLS, __rdmsr1(MSR_IA32_VMX_TRUE_PINBASED_CTLS));
-if (!vmwrite(PROC2_BASED_VM_EXEC_CONTROLS, 0))
-	vmwrite(PROC_BASED_VM_EXEC_CONTROLS,
-		__rdmsr1(MSR_IA32_VMX_TRUE_PROCBASED_CTLS) | CPU_BASED_ACTIVATE_SECONDARY_CONTROLS);
-else
-	vmwrite(PROC_BASED_VM_EXEC_CONTROLS, __rdmsr1(MSR_IA32_VMX_TRUE_PROCBASED_CTLS));
-	*/
 	// CH 26.2.2, Vol 3
 	// Checks on Host Control Registers and MSRs
 	vmwrite(HOST_CR0, get_cr0());
 	vmwrite(HOST_CR3, get_cr3());
 	vmwrite(HOST_CR4, get_cr4());
-	/* optional stuff
-	uint32_t exit_controls = vmreadz(VM_EXIT_CONTROLS);
-	if (exit_controls & VM_EXIT_LOAD_IA32_PAT)
-		vmwrite(HOST_IA32_PAT, __rdmsr1(MSR_IA32_CR_PAT));
-	if (exit_controls & VM_EXIT_LOAD_IA32_EFER)
-		vmwrite(HOST_IA32_EFER, __rdmsr1(MSR_EFER));
-	if (exit_controls & VM_EXIT_LOAD_IA32_PERF_GLOBAL_CTRL)
-		vmwrite(HOST_IA32_PERF_GLOBAL_CTRL,
-			__rdmsr1(MSR_CORE_PERF_GLOBAL_CTRL));
-	*/
-	// Doing EPT stuff
-	// Move to another function later.
 
 	//setting host selectors fields
 	vmwrite(HOST_ES_SELECTOR, get_es1());
